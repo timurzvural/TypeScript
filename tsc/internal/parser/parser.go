@@ -6472,7 +6472,19 @@ func (p *Parser) inAwaitContext() bool {
 }
 
 func (p *Parser) skipRangeTrivia(textRange core.TextRange) core.TextRange {
-	return core.NewTextRange(scanner.SkipTrivia(p.sourceText, textRange.Pos()), textRange.End())
+	// Missing nodes use an empty range (pos == end). Skipping trivia from that
+	// position can move start past end and invert the span, which then panics
+	// in --pretty (strings.Repeat with a negative count). Match Strada's
+	// getErrorSpanForNode: do not skip trivia for missing locations.
+	// See https://github.com/microsoft/TypeScript/issues/65078
+	if textRange.Pos() == textRange.End() {
+		return textRange
+	}
+	start := scanner.SkipTrivia(p.sourceText, textRange.Pos())
+	if start > textRange.End() {
+		return textRange
+	}
+	return core.NewTextRange(start, textRange.End())
 }
 
 func isReservedWord(token ast.Kind) bool {
@@ -6742,7 +6754,7 @@ func (p *Parser) parseResolutionMode(mode string, pos int, end int) (resolutionK
 }
 
 func (p *Parser) jsErrorAtRange(loc core.TextRange, message *diagnostics.Message, args ...any) {
-	p.jsDiagnostics = append(p.jsDiagnostics, ast.NewDiagnostic(nil, core.NewTextRange(scanner.SkipTrivia(p.sourceText, loc.Pos()), loc.End()), message, args...))
+	p.jsDiagnostics = append(p.jsDiagnostics, ast.NewDiagnostic(nil, p.skipRangeTrivia(loc), message, args...))
 }
 
 func (p *Parser) checkJSDecoratorSyntax(node *ast.Node) {
@@ -6782,12 +6794,12 @@ func (p *Parser) checkJSDecoratorSyntax(node *ast.Node) {
 						if trailingDecoratorIndex >= 0 {
 							diag := ast.NewDiagnostic(
 								nil,
-								core.NewTextRange(scanner.SkipTrivia(p.sourceText, modifiers[trailingDecoratorIndex].Loc.Pos()), modifiers[trailingDecoratorIndex].Loc.End()),
+								p.skipRangeTrivia(modifiers[trailingDecoratorIndex].Loc),
 								diagnostics.Decorators_may_not_appear_after_export_or_export_default_if_they_also_appear_before_export,
 							)
 							diag.AddRelatedInfo(ast.NewDiagnostic(
 								nil,
-								core.NewTextRange(scanner.SkipTrivia(p.sourceText, modifiers[decoratorIndex].Loc.Pos()), modifiers[decoratorIndex].Loc.End()),
+								p.skipRangeTrivia(modifiers[decoratorIndex].Loc),
 								diagnostics.Decorator_used_before_export_here,
 							))
 							p.jsDiagnostics = append(p.jsDiagnostics, diag)

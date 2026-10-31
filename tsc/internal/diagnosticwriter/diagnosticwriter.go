@@ -270,6 +270,11 @@ func FormatDiagnosticWithColorAndContext(output io.Writer, diagnostic Diagnostic
 }
 
 func writeCodeSnippet(writer io.Writer, sourceFile FileLike, start int, length int, squiggleColor string, indent string, formatOpts *FormattingOptions) {
+	// Inverted diagnostic spans (end < start) must not reach strings.Repeat with a
+	// negative count. Treat them as empty markers at `start` (see #65078).
+	if length < 0 {
+		length = 0
+	}
 	firstLine, firstLineChar := scanner.GetECMALineAndUTF16CharacterOfPosition(sourceFile, start)
 	lastLine, lastLineChar := scanner.GetECMALineAndUTF16CharacterOfPosition(sourceFile, start+length)
 	if length == 0 {
